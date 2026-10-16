@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Congenital Heart Explorer</title>
+<style>
+:root{
+  --paper:#f3f0ea; --card:#ffffff; --ink:#1b2027; --muted:#6b7280; --line:#dcd6cc;
+  --rail:#141922; --rail2:#1d242f; --railink:#e8eaed; --railmute:#9aa3ad;
+  --cy:#2f6fb5; --acy:#c0392b; --var:#a9761b;
+  --sel:#b8360c;
+  --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.serif{font-family:var(--serif)}
+
+/* ---------- shell ---------- */
+.wrap{--railW:clamp(420px,42vw,760px);display:grid;grid-template-columns:minmax(0,1fr) 12px var(--railW);height:100vh;overflow:hidden}
+/* draggable divider between the heart and the lesion panel */
+.split{position:relative;cursor:col-resize;background:var(--rail);touch-action:none;outline:none}
+.split::before{content:"";position:absolute;inset:0 5px;background:#2a3340;transition:background .15s}
+.split::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:44px;margin:-22px 0 0 -2px;border-radius:3px;
+  background:repeating-linear-gradient(#7d8896 0 2px,transparent 2px 6px)}
+.split:hover::before,.split:focus-visible::before,.split.drag::before{background:#a9761b}
+body.resizing{cursor:col-resize;user-select:none}
+body.resizing svg.heart{pointer-events:none}
+.stage{padding:22px 26px 14px;display:flex;flex-direction:column;min-width:0;min-height:0}
+.rail{background:var(--rail);color:var(--railink);display:flex;flex-direction:column;min-width:0;min-height:0}
+
+header h1{font-size:25px;margin:0 0 3px;letter-spacing:-.2px}
+header p{margin:0 0 16px;color:var(--muted);font-size:13.5px;max-width:62ch}
+
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.chip{
+  border:1px solid var(--line);background:var(--card);color:var(--ink);
+  padding:6px 13px;border-radius:999px;font-size:13px;cursor:pointer;font-family:inherit;transition:.15s;
+}
+.chip:hover{border-color:#b9b1a4}
+.chip[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip.cy[aria-pressed="true"]{background:var(--cy);border-color:var(--cy)}
+.chip.acy[aria-pressed="true"]{background:var(--acy);border-color:var(--acy)}
+.chip.var[aria-pressed="true"]{background:var(--var);border-color:var(--var)}
+.search{flex:1;min-width:190px}
+.search input{
+  width:100%;padding:7px 12px;border:1px solid var(--line);border-radius:8px;
+  font:inherit;font-size:13.5px;background:var(--card);color:var(--ink);
+}
+.search input:focus{outline:2px solid #c9d6e6;outline-offset:-1px;border-color:#9fb4cc}
+
+/* ---------- canvas ---------- */
+.canvasCard{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:6px;flex:1;display:flex;min-height:0;box-shadow:0 1px 2px rgba(0,0,0,.04);
+}
+svg.heart{width:100%;height:100%;display:block;touch-action:manipulation}
+
+/* hit areas are always invisible — no ovals on hover or selection */
+.hot{cursor:pointer}
+.hot .hit{fill:transparent;stroke:none}
+
+/* side labels */
+.lab{display:none;pointer-events:none}
+.lab.hov,.lab.sel,.lab.always{display:inline}
+.lab text{font-family:var(--serif);font-size:28px;fill:var(--ink)}
+.lab .lead{stroke:#3f4652;stroke-width:1.8}
+.lab .dot{fill:var(--ink)}
+.lab.sel text{fill:var(--sel)}
+.lab.sel .lead{stroke:var(--sel);stroke-width:2.2}
+.lab.sel .dot{fill:var(--sel)}
+.lab.always text{fill:#8a6215}
+.lab.always .lead{stroke:#a9761b;stroke-dasharray:7 6}
+.lab.always .dot{fill:#a9761b}
+.lab.always .sub{font-size:17px;font-style:italic;fill:#9a7a3a}
+.lab.always.hov text{fill:#5a3f0a}
+.lab.always.sel text,.lab.always.sel .sub{fill:var(--sel)}
+.lab.always.sel .lead{stroke:var(--sel)}
+.lab.always.sel .dot{fill:var(--sel)}
+
+.credit{margin-top:9px;font-size:11.5px;color:#9a9186;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}
+.key{display:inline-flex;align-items:center;gap:6px;color:#5f584f;font-size:12px}
+.key i{width:12px;height:12px;border-radius:3px;border:1px solid rgba(0,0,0,.35);display:inline-block}
+.credit .src{margin-left:auto}
+
+/* ---------- rail ---------- */
+.railHead{padding:22px 22px 14px;border-bottom:1px solid #2a3340}
+.railHead h2{margin:0 0 3px;font-size:20px;letter-spacing:-.2px}
+.railHead p{margin:0;color:var(--railmute);font-size:12.5px}
+.railBody{overflow-y:auto;padding:16px 22px 26px;flex:1}
+.hint{color:var(--railmute);font-size:13.5px;line-height:1.6}
+.hint b{color:var(--railink);font-weight:600}
+
+.inset{background:#fff;border-radius:10px;padding:8px;width:50%;margin:0 auto 18px;cursor:zoom-in}
+.inset svg{width:100%;height:auto;display:block}
+.inset .cap{font-size:11px;color:#6b7280;text-align:center;padding:5px 4px 1px;line-height:1.4}
+.insetNote{
+  background:#20293a;border-left:3px solid var(--var);border-radius:0 7px 7px 0;
+  padding:9px 12px;margin:0 0 16px;font-size:12.5px;color:#c9d2de;line-height:1.55;
+}
+
+.count{font-size:12px;color:var(--railmute);margin:0 0 11px;letter-spacing:.03em;text-transform:uppercase}
+.item{background:var(--rail2);border-left:3px solid #3a4658;border-radius:0 8px 8px 0;padding:11px 13px;margin-bottom:9px}
+.item.cyanotic{border-left-color:var(--cy)}
+.item.acyanotic{border-left-color:var(--acy)}
+.item.variable{border-left-color:var(--var)}
+.item h3{margin:0 0 5px;font-size:15px;font-weight:600;letter-spacing:-.1px}
+.item p{margin:6px 0 0;font-size:13px;color:#b9c2cd;line-height:1.55}
+.tags{display:flex;flex-wrap:wrap;gap:5px}
+.tag{font-size:10.5px;padding:2px 7px;border-radius:999px;letter-spacing:.03em;text-transform:uppercase;font-weight:600}
+.tag.cyanotic{background:rgba(47,111,181,.22);color:#8fbdf0}
+.tag.acyanotic{background:rgba(192,57,43,.22);color:#f0a097}
+.tag.variable{background:rgba(169,118,27,.22);color:#e3bc76}
+.tag.shunt{background:#2c3646;color:#aab6c4}
+.item{cursor:pointer;transition:background .15s}
+.item[aria-expanded="false"]:hover{background:#242c38}
+.item[aria-expanded="true"]{cursor:default;background:#1f2732;box-shadow:0 0 0 1px #3a4658 inset}
+.item .head{display:flex;align-items:flex-start;gap:10px;cursor:pointer;outline:none}
+.item .head h3{flex:1}
+.item .head:focus-visible{box-shadow:0 0 0 2px #a9761b;border-radius:4px}
+.chev{flex:none;width:22px;height:22px;border-radius:50%;background:#2c3646;position:relative;margin-top:1px}
+.chev::before{content:"";position:absolute;left:7px;top:6px;width:6px;height:6px;border-right:2px solid #c3ccd6;border-bottom:2px solid #c3ccd6;transform:rotate(45deg);transition:transform .15s}
+.item[aria-expanded="true"] .chev::before{transform:rotate(-135deg);top:9px}
+.item .more>p{margin-top:9px}
+/* Procedures mode: the heart steps aside and the library takes the full width.
+   The header and filter bar stay on top, so the Procedures button remains reachable. */
+.wrap.procs{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+.wrap.procs .canvasCard,.wrap.procs .credit,.wrap.procs .split{display:none}
+.wrap.procs .stage{padding-bottom:0;flex:none}
+.wrap.procs .rail{border-top:1px solid #2a3340}
+.wrap.procs .chip[data-f]{display:none}
+.wrap.procs .search{margin-left:0}
+.catGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px}
+.catBox{font:inherit;color:inherit;text-align:left;cursor:pointer;background:var(--rail2);
+  border:1px solid #2f3947;border-left-width:4px;border-radius:0 10px 10px 0;padding:14px 16px;transition:.15s}
+.catBox:hover,.catBox:focus-visible{background:#252e3b;border-color:#5f6b7c;outline:none}
+.catBox:hover{border-left-color:inherit}
+.catBox b{display:block;font-size:16px;color:#fff;font-weight:600;letter-spacing:-.1px}
+.catBox .cnt{display:block;font-size:12px;letter-spacing:.04em;text-transform:uppercase;margin:5px 0 7px;font-style:normal}
+.catBox span{display:block;font-size:13.2px;color:var(--railmute);line-height:1.5}
+.groupNote{color:var(--railmute);font-size:13.5px;line-height:1.55;margin:0 0 14px}
+@media (max-width:700px){
+  .catGrid{grid-template-columns:1fr;gap:10px}
+  .catBox b{font-size:17px} .catBox span{font-size:14px}
+}
+.chip.proc{margin-left:auto;border-color:#b58a3e;color:#8a6215}
+.chip.proc[aria-pressed="true"]{background:#8a6215;border-color:#8a6215;color:#fff}
+.pgHdr{margin:20px 0 10px;padding-bottom:7px;border-bottom:1px solid #2f3947}
+.pgHdr:first-of-type{margin-top:2px}
+.pgHdr b{display:block;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#e3bc76;font-weight:700}
+.pgHdr span{display:block;font-size:12.5px;color:var(--railmute);margin-top:3px;line-height:1.5;text-transform:none;letter-spacing:0}
+.item.procItem{border-left-color:#8a6215}
+.item.procItem.hist{border-left-color:#5c6673}
+.hTag{font-size:10.5px;padding:2px 7px;border-radius:999px;background:#2c3646;color:#aab6c4;letter-spacing:.03em;text-transform:uppercase;font-weight:600}
+.useRow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:10px}
+.useRow>span{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--railmute);width:100%;margin-bottom:2px}
+.use{font:inherit;font-size:12.5px;padding:3px 9px;border-radius:999px;border:1px solid #3a4658;background:transparent;color:#c3ccd6;cursor:pointer;text-align:left}
+.use:hover{border-color:#8fa2b8;color:#fff}
+.txFilter{float:right;font:inherit;font-size:11.5px;color:#aab6c4;background:transparent;border:1px solid #3a4658;border-radius:999px;padding:3px 9px;cursor:pointer;margin-top:10px}
+.txFilter[aria-pressed="true"]{background:#2c3646;color:#fff;border-color:#4a5768}
+.tx li.muted{display:none}
+.back{font:inherit;font-size:13px;color:#e3bc76;background:transparent;border:none;padding:0 0 12px;cursor:pointer}
+.back:hover{text-decoration:underline}
+.noProc{color:var(--railmute);font-size:13px;margin-top:10px;font-style:italic}
+.item h3 .ab{display:inline-block;margin-left:8px;font-size:12px;font-weight:600;color:#e3bc76;letter-spacing:.02em;vertical-align:1px}
+.item .here{background:#252e3c;border-radius:6px;padding:6px 9px;margin:8px 0 0;color:#dde4ec;font-size:13px}
+.item .here b{color:#fff;font-weight:600}
+.tier{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:#cfd6df;margin:18px 0 9px;padding-bottom:6px;border-bottom:1px solid #2f3947;font-weight:700}
+.tier:first-of-type{margin-top:4px}
+.tier span{color:var(--railmute);font-weight:500;margin-left:4px}
+.tier.rare{color:#aab3bd}
+.tier.related{color:#8e98a3}
+.invRow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:9px}
+.invRow>span{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--railmute);margin-right:2px}
+.inv{font:inherit;font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid #3a4658;background:transparent;color:#c3ccd6;cursor:pointer}
+.inv:hover{border-color:#8fa2b8;color:#fff}
+.inv.cur{background:#3a4658;color:#fff;border-color:#3a4658;cursor:default}
+.txBtn{margin-top:10px;font:inherit;font-size:12.5px;font-weight:600;color:#f2c14e;background:transparent;border:1px solid #5a4a24;border-radius:7px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.txBtn::before{content:"▸";font-size:11px;transition:transform .15s}
+.txBtn[aria-expanded="true"]::before{transform:rotate(90deg)}
+.txBtn:hover{background:#2a2416}
+.txBtn .n{background:#3a3220;border-radius:999px;padding:0 6px;font-size:11px;color:#e3c789}
+.tx{list-style:none;margin:9px 0 0;padding:0;border-top:1px solid #2f3947}
+.tx li{display:grid;grid-template-columns:86px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #26303d;font-size:12.8px;line-height:1.45}
+.tx li b{display:block;color:#eef1f4;font-weight:600}
+.tx .age{display:block;color:#e3bc76;font-size:12px;margin-top:1px}
+.tx .why{display:block;color:#aeb8c3;margin-top:2px}
+.tt{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:4px;padding:3px 0;text-align:center;align-self:start;margin-top:1px}
+.tt.surgical{background:rgba(214,92,64,.22);color:#f2a48f}
+.tt.catheter{background:rgba(64,156,214,.22);color:#93cdf2}
+.tt.medical{background:rgba(88,176,110,.22);color:#9ddcb0}
+.tt.palliative{background:rgba(169,118,27,.25);color:#e3bc76}
+.tt.hybrid{background:rgba(150,110,210,.25);color:#cdb3f0}
+.tt.device{background:#2c3646;color:#b9c4d0}
+.tt.observation{background:#2c3646;color:#b9c4d0}
+.srcHdr{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--railmute);margin:16px 0 8px;padding-top:12px;border-top:1px solid #2a3340}
+
+/* ---------- great-vessel figure ---------- */
+.modal{position:fixed;inset:0;background:rgba(12,15,20,.86);display:none;align-items:center;justify-content:center;padding:26px;z-index:50}
+.modal.on{display:flex}
+.modalIn{background:#fff;border-radius:14px;padding:14px;max-width:min(96vw,1200px);width:100%;position:relative}
+.modalIn svg{width:100%;height:auto;max-height:80vh;display:block}
+.modalIn .cap{font-size:12.5px;color:#4b5563;text-align:center;padding:8px 10px 2px;line-height:1.5}
+.x{position:absolute;top:-12px;right:-12px;width:34px;height:34px;border-radius:50%;border:none;background:#fff;color:#1b2027;font-size:19px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3);line-height:1}
+
+.vlbl{font-family:var(--serif);font-size:52px;fill:var(--ink);pointer-events:none}
+.big .vlbl{font-size:36px}
+.vlbl.duct{fill:#8a3a0c}
+.vlead{stroke:#3f4652;stroke-width:3;fill:none}
+.big .vlead{stroke-width:2}
+.vdot{fill:var(--ink)}
+.arrow{stroke:#b8360c;stroke-width:6;fill:none;marker-end:url(#ah)}
+.big .arrow{stroke-width:3.4}
+
+/* ---------- reading sizes: desktop (slightly larger) ---------- */
+.railHead h2{font-size:22px}
+.railHead p{font-size:13.5px}
+.hint{font-size:14.5px}
+.count{font-size:12.5px}
+.tier{font-size:12px}
+.item h3{font-size:16px}
+.item h3 .ab{font-size:13px}
+.item p,.item .here{font-size:14px}
+.tag{font-size:11px}
+.inv{font-size:12.5px}
+.invRow>span{font-size:11px}
+.txBtn{font-size:13.5px}
+.tx li{font-size:13.8px;grid-template-columns:92px 1fr}
+.tx .age{font-size:13px}
+.tt{font-size:10px}
+
+/* ---------- phones: larger reading text, heart labels sized for a small screen ---------- */
+@media (max-width:700px){
+  header h1{font-size:23px}
+  header p{font-size:14.5px}
+  .railHead{padding:18px 16px 12px}
+  .railHead h2{font-size:23px}
+  .railHead p{font-size:14.5px}
+  .railBody{padding:14px 14px 30px}
+  .hint{font-size:15.5px}
+  .count{font-size:13px}
+  .tier{font-size:13px}
+  .item{padding:13px 14px}
+  .item h3{font-size:17.5px;line-height:1.3}
+  .item h3 .ab{font-size:14px}
+  .item p,.item .here{font-size:15px;line-height:1.55}
+  .tag{font-size:12px;padding:3px 8px}
+  .inv{font-size:13.5px;padding:4px 10px}
+  .invRow>span{font-size:12px}
+  .txBtn{font-size:15px;padding:7px 12px}
+  .tx li{font-size:15px;grid-template-columns:96px 1fr}
+  .tx .age{font-size:14px}
+  .tt{font-size:11px}
+  .lab text{font-size:30px}
+  .lab.always .sub{font-size:22px}
+  .credit{font-size:12.5px}
+  .key{font-size:13px}
+}
+
+@media (max-width:1000px){
+  .wrap{grid-template-columns:1fr;height:auto;overflow:visible}
+  .split{display:none}
+  .stage{padding:18px 16px 12px}
+  .canvasCard{min-height:50vh;flex:none}
+  svg.heart{height:auto;max-height:62vh;margin:auto}
+  .railBody{overflow:visible}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <main class="stage">
+    <header>
+      <h1 class="serif">Congenital Heart Explorer</h1>
+      <p id="lede">Click a chamber, valve, septum or great vessel to see the structural lesions that arise there. Hover to name a structure.</p>
+    </header>
+
+    <div class="bar">
+      <button class="chip" data-f="all" aria-pressed="true">All</button>
+      <button class="chip cy" data-f="cyanotic" aria-pressed="false">Cyanotic</button>
+      <button class="chip acy" data-f="acyanotic" aria-pressed="false">Acyanotic</button>
+      <button class="chip var" data-f="variable" aria-pressed="false">Variable</button>
+      <button class="chip proc" id="procBtn" aria-pressed="false">Procedures</button>
+      <div class="search"><input id="q" type="search" placeholder="Search lesions and procedures — e.g. Ebstein, TAPVR, Glenn"></div>
+    </div>
+
+    <div class="canvasCard">
+      <svg class="heart" id="canvas" viewBox="48 35 1245 690" role="img" aria-label="Coronal section of the heart with clickable structures">
+        <g id="art">__ART_MAIN__</g>
+        <g id="hots"></g>
+        <g id="labels"></g>
+      </svg>
+    </div>
+    <p class="credit">
+      <span class="key"><i style="background:#8b5234"></i>Myocardium &amp; septa</span>
+      <span class="key"><i style="background:#f2c14e"></i>Valves</span>
+      <span class="key"><i style="background:#ed302e"></i>Oxygenated blood</span>
+      <span class="key"><i style="background:#0054a5"></i>Deoxygenated blood</span>
+      <span class="src">Heart illustrations licensed from Freepik. Teaching aid only — schematic, not to anatomical scale.</span>
+    </p>
+  </main>
+
+  <div class="split" id="split" role="separator" aria-orientation="vertical" aria-label="Drag to resize the lesion panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
+  <aside class="rail">
+    <div class="railHead">
+      <h2 class="serif" id="railTitle">Select a structure</h2>
+      <p id="railSub">16 structures</p>
+    </div>
+    <div class="railBody" id="railBody">
+      <p class="hint">Start by clicking any structure on the diagram — the <b>chambers</b>, the <b>septa</b>, the four <b>valves</b>, or the <b>great vessels</b>.<br><br>
+      Use the filter chips to restrict the list to <b>cyanotic</b> or <b>acyanotic</b> lesions, or type in the search box to look across every region at once.</p>
+    </div>
+  </aside>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modalIn">
+    <button class="x" id="closeModal" aria-label="Close">&times;</button>
+    <div id="modalArt"></div>
+    <p class="cap">Great vessels seen from the front, in the plane where the arch, the pulmonary trunk and the duct actually relate to one another. Patient's right is on the left of the image.</p>
+  </div>
+</div>
+
+<script>
+__DATA__
+
+/* ---------- geometry, in the coordinate space of the coronal artwork ----------
+   shapes: e = ellipse [cx,cy,rx,ry] · p = polygon [x1,y1,...] · r = rect [x,y,w,h]
+   labels: [text, side L|R, baseline y, [[targetX,targetY],...]]                    */
+// order matters: later entries sit on top, so thin structures (septa, valves) come last
+const HOT = {
+  ra : {s:[['e',545,410,62,92]],
+        L:[['Right atrium','L',460,[[545,450]]]]},
+  rv : {s:[['e',668,590,90,98]],
+        L:[['Right ventricle','L',620,[[650,600]]]]},
+  la : {s:[['e',800,322,68,54]],
+        L:[['Left atrium','R',392,[[794,378]]]]},
+  lv : {s:[['e',820,530,62,112]],
+        L:[['Left ventricle','R',566,[[826,540]]]]},
+  // aorta: arch + ascending segment between SVC and pulmonary trunk + the red root area beside the right atrium
+  ao : {s:[['e',690,133,110,68],
+           ['p',572,195,655,195,648,215,645,240,648,265,655,284,620,290,575,292],
+           ['p',602,322,603,317,608,311,613,303,623,296,633,292,648,288,650,288,653,295,654,298,648,311,641,323,634,337,630,346,624,358,620,366,610,354,606,345,601,333]],
+        L:[['Aorta','R',116,[[740,170]]]]},
+  // pulmonary trunk: bifurcation + the column down to just above the pulmonary valve
+  pt : {s:[['e',712,250,44,46],
+           ['p',658,292,745,285,728,301,713,328,703,348,698,363,692,377,686,392,672,390,660,383,640,380,622,381,625,364,631,350,647,321,654,306]],
+        L:[['Pulmonary trunk','R',272,[[724,262]]]]},
+  pa : {s:[['e',462,224,34,28],['e',848,221,56,31]],
+        L:[['Right pulmonary artery','L',234,[[466,224]]],['Left pulmonary artery','R',226,[[862,222]]]]},
+  sv : {s:[['e',528,182,37,78],['e',528,612,37,88]],
+        L:[['Superior vena cava','L',150,[[528,150]]],['Inferior vena cava','L',682,[[528,662]]]]},
+  pv : {s:[['e',458,303,30,21],['e',450,356,24,21],['e',872,292,22,21],['e',872,345,22,21]],
+        L:[['Right pulmonary veins','L',322,[[458,303],[450,356]]],['Left pulmonary veins','R',332,[[878,292],[880,346]]]]},
+  // atrial septum: the thin brown strip along the right atrium, widened a little for easy pointing
+  ias: {s:[['p',566,300,578,293,588,300,598,316,604,334,607,350,612,362,619,377,608,386,598,372,591,356,587,338,580,322]],
+        L:[['Atrial septum','L',408,[[597,340]]]]},
+  ivs: {s:[['p',677,456,686,474,690,486,695,508,710,538,736,572,760,602,782,629,788,645,812,640,839,631,826,620,817,609,793,572,779,552,760,524,742,499,729,485,707,469,697,456]],
+        L:[['Ventricular septum','R',640,[[792,608]]]]},
+  pda: {s:[['r',944,146,300,56]],
+        L:[['Ductus arteriosus','R',170,[[797,197]]]]},
+  tv : {s:[['e',556,517,47,20],['p',594,523,596,500,594,480,598,460,606,448,613,452,606,470,603,490,606,512,610,528,602,534]],
+        L:[['Tricuspid valve','L',560,[[550,512]]]]},
+  av : {s:[['e',718,418,24,30]],
+        L:[['Aortic valve','R',446,[[720,424]]]]},
+  mv : {s:[['e',795,430,52,35]],
+        L:[['Mitral valve','R',500,[[802,452]]]]},
+ 'pv-valve':{s:[['p',611,432,612,418,617,404,625,393,636,385,648,383,660,387,669,397,674,412,675,430,672,444,664,454,652,462,638,464,625,459,615,447]],
+        L:[['Pulmonary valve','L',512,[[640,428]]]]}
+};
+const LX=400, RX=950;                      // label columns: left text ends at LX, right text starts at RX
+const INSET_FOR = new Set(['pda']);
+
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs){ const e=document.createElementNS(NS,tag); for(const a in attrs) e.setAttribute(a,attrs[a]); return e; }
+
+/* ---------- hit areas ---------- */
+const hots=document.getElementById('hots');
+for(const k in HOT){
+  const g=el('g',{class:'hot'}); g.dataset.k=k;
+  for(const sh of HOT[k].s){
+    let e;
+    if(sh[0]==='e') e=el('ellipse',{cx:sh[1],cy:sh[2],rx:sh[3],ry:sh[4]});
+    else if(sh[0]==='r') e=el('rect',{x:sh[1],y:sh[2],width:sh[3],height:sh[4]});
+    else { const p=[]; for(let i=1;i<sh.length;i+=2) p.push(sh[i]+','+sh[i+1]); e=el('polygon',{points:p.join(' ')}); }
+    e.setAttribute('class','hit'); g.appendChild(e);
+  }
+  hots.appendChild(g);
+}
+
+/* ---------- side labels ---------- */
+const labels=document.getElementById('labels');
+const LAB={};
+/* Phones: tighter view so the heart is larger; side labels stay, wrapped onto two lines */
+const VIEW = {wide:{vb:'48 35 1245 690', lx:LX, rx:RX, lineH:0},
+              compact:{vb:'192 35 966 700', lx:410, rx:938, lineH:35}};
+const PHONE = window.matchMedia('(max-width:700px)');
+// right-column baselines re-spaced on phones so wrapped labels never collide
+const COMPACT_Y = {'Aorta':96,'Ductus arteriosus':146,'Left pulmonary artery':246,'Pulmonary trunk':322,
+                   'Left pulmonary veins':370,'Left atrium':440,'Aortic valve':480,'Mitral valve':520};
+function wrap2(s){                       // split a long label at the space nearest its middle
+  if(s.length<=15) return [s];
+  const mid=s.length/2; let best=-1;
+  for(let i=0;i<s.length;i++) if(s[i]===' ' && (best<0 || Math.abs(i-mid)<Math.abs(best-mid))) best=i;
+  return best<0 ? [s] : [s.slice(0,best), s.slice(best+1)];
+}
+function buildLabels(){
+  const V = PHONE.matches ? VIEW.compact : VIEW.wide;
+  document.getElementById('canvas').setAttribute('viewBox', V.vb);
+  labels.textContent='';
+  for(const k in HOT){
+    const g=el('g',{class:'lab'+(k==='pda'?' always':'')});
+    let lastY=0;
+    for(const [text,side,y0,targets] of HOT[k].L){
+      const y = V.lineH && COMPACT_Y[text]!=null ? COMPACT_Y[text] : y0;
+      const x0 = side==='L' ? V.lx+10 : V.rx-10;
+      for(const [tx,ty] of targets){
+        g.appendChild(el('line',{class:'lead',x1:x0,y1:y-9,x2:tx,y2:ty}));
+        g.appendChild(el('circle',{class:'dot',cx:tx,cy:ty,r:5}));
+      }
+      const t=el('text',{x:side==='L'?V.lx:V.rx, y:y, 'text-anchor':side==='L'?'end':'start'});
+      const lines = V.lineH ? wrap2(text) : [text];
+      lines.forEach((ln,i)=>{ const s=el('tspan',{x:side==='L'?V.lx:V.rx, dy:i?V.lineH:0}); s.textContent=ln; t.appendChild(s); });
+      g.appendChild(t); lastY = y + (lines.length-1)*V.lineH;
+    }
+    if(k==='pda'){
+      const c=el('text',{class:'sub',x:V.rx,y:lastY+(V.lineH?30:26),'text-anchor':'start'});
+      c.textContent = V.lineH ? 'see inset' : 'not in this plane · see inset'; g.appendChild(c);
+      // clickable area follows the label
+      const r=document.querySelector('.hot[data-k="pda"] rect');
+      if(r){ r.setAttribute('x',V.rx-6); r.setAttribute('y',V.lineH?116:146);
+              r.setAttribute('width',V.lineH?230:300); r.setAttribute('height',V.lineH?104:56); }
+    }
+    labels.appendChild(g); LAB[k]=g;
+  }
+  try{ setSel(current); }catch(e){}       // `current` is not defined yet on first build
+}
+buildLabels();
+PHONE.addEventListener('change',buildLabels);
+function setHover(k){ for(const x in LAB) LAB[x].classList.toggle('hov', x===k && x!==current); }
+function setSel(k){ for(const x in LAB) LAB[x].classList.toggle('sel', x===k); }
+
+/* ---------- refs ---------- */
+const railTitle=document.getElementById('railTitle');
+const railSub  =document.getElementById('railSub');
+const railBody =document.getElementById('railBody');
+const q        =document.getElementById('q');
+const modal    =document.getElementById('modal');
+let current=null, filter='all', mode='lesions';
+
+LESIONS.forEach((x,i)=>x.id=i);
+PROCS.forEach((p,i)=>p.id=i);
+const LES_BY_NAME = Object.fromEntries(LESIONS.map(x=>[x.n,x]));
+// inverted index: lesion name -> the library procedures used for it
+const PROC_FOR = {};
+PROCS.forEach(p=>p.u.forEach(n=>(PROC_FOR[n]=PROC_FOR[n]||[]).push(p)));
+const PG_NAME = Object.fromEntries(PGROUPS.map(g=>[g[0],g[1]]));
+// treatment rows that are procedures rather than medical management
+const IS_PROC_ROW = t => t!=='Observation' && t!=='Medical';
+const N_LESIONS = LESIONS.filter(x=>x.f!==REL).length;
+const TIERS = [[COMMON,'Common'],[RARE,'Rare'],[REL,'Related physiology & post-repair']];
+const TX_ORDER = ['Observation','Medical','Catheter','Palliative','Hybrid','Device','Surgical'];
+
+function cls(c){ return c===C?'cyanotic':c===A?'acyanotic':'variable'; }
+function tags(x){
+  const label = x.c===C?'Cyanotic':x.c===A?'Acyanotic':'Depends on physiology';
+  let h=`<div class="tags"><span class="tag ${cls(x.c)}">${label}</span>`;
+  if(x.s && x.s!=='none' && x.s!=='variable') h+=`<span class="tag shunt">${x.s}</span>`;
+  return h+'</div>';
+}
+function card(x, here){
+  const ab = x.ab && x.ab!=='—' ? `<span class="ab">${x.ab}</span>` : '';
+  const note = here && x.at[here] ? `<p class="here"><b>${REG[here].name}:</b> ${x.at[here]}</p>` : '';
+  const inv = Object.keys(x.at).map(k=>
+    `<button class="inv${k===here?' cur':''}" data-k="${k}" ${k===here?'tabindex="-1"':''}>${REG[k].name}</button>`).join('');
+  const tx = x.tx.map(r=>`<li class="${IS_PROC_ROW(r[0])?'op':'mgmt'}"><span class="tt ${r[0].toLowerCase()}">${r[0]}</span>
+      <div><b>${r[1]}</b>${r[2] && r[2]!=='—' ? `<span class="age">${r[2]}</span>`:''}<span class="why">${r[3]}</span></div></li>`).join('');
+  const nOps = x.tx.filter(r=>IS_PROC_ROW(r[0])).length;
+  const procs = (PROC_FOR[x.n]||[]).map(p=>
+    `<button class="use" data-p="${p.id}">${p.ab && p.ab!=='—' ? p.ab.split(' · ')[0] : p.n}</button>`).join('');
+  const procRow = procs
+    ? `<div class="useRow"><span>Procedures &mdash; tap to see every defect it is used in</span>${procs}</div>`
+    : `<p class="noProc">No operation in the procedure library &mdash; managed by observation, medically, or with the associated lesion.</p>`;
+  // collapsed: name, tags and the structure note; tapping the card reveals the rest
+  return `<article class="item ${cls(x.c)}" aria-expanded="false">
+    <div class="head" role="button" tabindex="0"><h3>${x.n}${ab}</h3><span class="chev" aria-hidden="true"></span></div>
+    ${tags(x)}${note}
+    <div class="more" hidden>
+      <p>${x.t}</p>
+      <div class="invRow"><span>Involves</span>${inv}</div>
+      ${procRow}
+      <button class="txBtn" aria-expanded="false" data-id="${x.id}">Treatment <span class="n">${x.tx.length}</span></button>
+      <button class="txFilter" aria-pressed="false" hidden>Procedures only <span class="n">${nOps}</span></button>
+      <ol class="tx" hidden>${tx}</ol>
+    </div></article>`;
+}
+
+/* ---------- procedure library ---------- */
+function procCard(p, hereLesion, inGroup){
+  const ab = p.ab && p.ab!=='—' ? `<span class="ab">${p.ab}</span>` : '';
+  const hist = p.h ? `<span class="hTag">Historical</span>` : '';
+  const uses = p.u.slice().sort((a,b)=>{
+    const A=LES_BY_NAME[a], B=LES_BY_NAME[b];
+    const r=f=>f===COMMON?0:f===RARE?1:2;
+    return r(A.f)-r(B.f) || a.localeCompare(b);
+  }).map(n=>`<button class="use${n===hereLesion?' cur':''}" data-l="${LES_BY_NAME[n].id}">${n}</button>`).join('');
+  return `<article class="item procItem${p.h?' hist':''}" aria-expanded="false">
+    <div class="head" role="button" tabindex="0"><h3>${p.n}${ab}</h3><span class="chev" aria-hidden="true"></span></div>
+    <div class="tags">${inGroup?'':`<span class="tag shunt">${PG_NAME[p.g]}</span>`}${hist}</div>
+    <div class="more" hidden>
+      <p>${p.t}</p>
+      <div class="useRow"><span>Used in ${p.u.length} defect${p.u.length===1?'':'s'} &mdash; tap to open</span>${uses}</div>
+    </div></article>`;
+}
+let procGroup=null;                       // which category is open, null = the tile home
+
+// the category tiles — the heart is hidden in this mode
+function renderProcHome(){
+  procGroup=null;
+  railTitle.textContent='Procedures';
+  railSub.textContent=`${PROCS.length} operations and catheter interventions · choose a category`;
+  railBody.innerHTML='<div class="catGrid">'+PGROUPS.map(([g,label,blurb,col])=>{
+    const n=PROCS.filter(p=>p.g===g).length;
+    return `<button class="catBox" data-g="${g}" style="border-left-color:${col}">
+      <b>${label}</b><em class="cnt" style="color:${col}">${n} procedure${n===1?'':'s'}</em><span>${blurb}</span></button>`;
+  }).join('')+'</div>';
+  railBody.scrollTop=0;
+}
+function renderProcGroup(g){
+  procGroup=g;
+  const grp=PGROUPS.find(x=>x[0]===g), list=PROCS.filter(p=>p.g===g);
+  railTitle.textContent=grp[1];
+  railSub.textContent=`${list.length} procedure${list.length===1?'':'s'}`;
+  railBody.innerHTML=`<button class="back" data-back="home">&larr; All categories</button>`
+    + `<p class="groupNote">${grp[2]}</p>` + list.map(p=>procCard(p,null,true)).join('');
+  railBody.scrollTop=0;
+}
+function focusProc(p){
+  setMode('procs'); setSel(null); current=null;
+  railTitle.textContent=p.n;
+  railSub.textContent=PG_NAME[p.g];
+  const backTo = procGroup ? `data-back="group"` : `data-back="home"`;
+  const backLbl = procGroup ? PG_NAME[procGroup] : 'All categories';
+  railBody.innerHTML=`<button class="back" ${backTo}>&larr; ${backLbl}</button>`+procCard(p);
+  toggleCard(railBody.querySelector('.item'),true); railBody.scrollTop=0;
+}
+function focusLesion(x){
+  setMode('lesions'); setSel(null); current=null;
+  railTitle.textContent=x.n;
+  railSub.textContent=x.ab && x.ab!=='—' ? x.ab : 'Lesion';
+  railBody.innerHTML=`<button class="back" data-back="lesion">&larr; Back</button>`+card(x,null);
+  toggleCard(railBody.querySelector('.item'),true); railBody.scrollTop=0;
+}
+const LEDE={lesions:'Click a chamber, valve, septum or great vessel to see the structural lesions that arise there. Hover to name a structure.',
+            procs:'Browse the operations and catheter interventions by category, and see every defect each one is used in.'};
+function setMode(m){
+  mode=m;
+  document.getElementById('lede').textContent=LEDE[m];
+  document.querySelector('.wrap').classList.toggle('procs', m==='procs');
+  document.getElementById('procBtn').setAttribute('aria-pressed', String(m==='procs'));
+}
+function setProcBtn(on){ setMode(on?'procs':'lesions'); }
+function tiered(list, here){
+  let h='';
+  // within a tier: lesions centred on this structure first, then ones that only involve it secondarily
+  const rank = x => here ? Object.keys(x.at).indexOf(here) : 0;
+  for(const [f,label] of TIERS){
+    const g=list.filter(x=>x.f===f).map((x,i)=>[x,i])
+      .sort((a,b)=>(rank(a[0])>0)-(rank(b[0])>0) || a[1]-b[1]).map(p=>p[0]);
+    if(!g.length) continue;
+    h+=`<h4 class="tier ${f}">${label} <span>${g.length}</span></h4>`+g.map(x=>card(x,here)).join('');
+  }
+  return h;
+}
+
+/* ---------- great-vessel figure ---------- */
+const VESSEL_SVG = `__ART_VESSELS__`;
+// [x, y, text, anchor, leader [x1,y1, x2,y2, ...]] — enlarged view only
+const V_LABELS = [
+  [330,-40,'Arch branch vessels (head and neck)','middle',[330,-28,189,96,260,117,391,103,493,88]],
+  [-24,250,'Right pulmonary artery','end',[-12,240,44,284]],
+  [-24,430,'Ascending aorta','end',[-12,420,176,430]],
+  [-24,600,'Pulmonary trunk','end',[-12,590,242,600]],
+  [770,170,'Aortic arch','start',[758,160,440,212]],
+  [770,380,'Left pulmonary artery','start',[758,370,692,352]],
+  [770,560,'Descending aorta','start',[758,550,562,560]]
+];
+function vesselSVG(big){
+  let s='', vb;
+  if(big){
+    vb=[-450,-90,1660,800];
+    for(const L of V_LABELS){
+      const d=L[4];   // [startX,startY, targetX,targetY, ...more targets]
+      for(let i=2;i<d.length;i+=2)
+        s+=`<path class="vlead" d="M${d[0]} ${d[1]} L${d[i]} ${d[i+1]}"/><circle class="vdot" cx="${d[i]}" cy="${d[i+1]}" r="5"/>`;
+      s+=`<text class="vlbl" x="${L[0]}" y="${L[1]}" text-anchor="${L[3]}">${L[2]}</text>`;
+    }
+    s+=`<text class="vlbl duct" x="770" y="276" text-anchor="start">Patent ductus arteriosus</text>`;
+    s+=`<path class="arrow" d="M758 266 Q 600 280 466 316"/>`;
+  }else{
+    vb=[-60,-130,860,770];
+    s+=`<text class="vlbl duct" x="370" y="-70" text-anchor="middle">Patent ductus arteriosus</text>`;
+    s+=`<path class="arrow" d="M404 -46 Q 442 110 436 260"/>`;
+  }
+  return `<svg class="${big?'big':''}" viewBox="${vb.join(' ')}" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b8360c"/></marker></defs>
+    <rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" fill="#fff"/>
+    ${VESSEL_SVG}${s}</svg>`;
+}
+
+/* ---------- rail ---------- */
+function render(){
+  if(!current) return;
+  const s=REG[current];
+  const all=LESIONS.filter(x=>x.at[current]);
+  const items=all.filter(x=>filter==='all'||x.c===filter);
+  railTitle.textContent=s.name;
+  railSub.textContent=s.sub;
+  let html='';
+  if(INSET_FOR.has(current)){
+    html+=`<div class="inset" id="insetBox" title="Click to enlarge">${vesselSVG(false)}
+      <div class="cap">Great-vessel relationships &middot; click to enlarge</div></div>`;
+    if(current==='pda'){
+      html+=`<div class="insetNote">The duct cannot be drawn truthfully in a four-chamber coronal cut — it runs in a different plane, joining the pulmonary trunk to the underside of the arch beyond the last branch vessel. The inset above shows it where it actually sits.</div>`;
+    }
+  }
+  html+=`<p class="count">${items.length} of ${all.length} entries involve this structure</p>`;
+  html+= items.length ? tiered(items, current) : `<p class="hint">No lesions at this structure match the current filter.</p>`;
+  railBody.innerHTML=html;
+  railBody.scrollTop=0;
+  const ib=document.getElementById('insetBox');
+  if(ib) ib.addEventListener('click',openModal);
+}
+
+function pick(k){
+  modal.classList.remove('on');
+  setMode('lesions'); procGroup=null;
+  current=k; setSel(k); setHover(null); render();
+}
+
+/* ---------- events ---------- */
+hots.addEventListener('mouseover',e=>{
+  const g=e.target.closest('.hot'); if(g) setHover(g.dataset.k);
+});
+hots.addEventListener('mouseout',e=>{
+  const to=e.relatedTarget;
+  if(!to || !to.closest || !to.closest('.hot')) setHover(null);
+});
+hots.addEventListener('click',e=>{
+  const g=e.target.closest('.hot'); if(!g) return;
+  q.value=''; pick(g.dataset.k);
+});
+
+document.querySelector('.bar').addEventListener('click',e=>{
+  const b=e.target.closest('.chip'); if(!b) return;
+  if(b.id==='procBtn'){                                  // swap the panel between lesions and the library
+    const on=b.getAttribute('aria-pressed')!=='true';
+    setMode(on?'procs':'lesions'); q.value='';
+    if(on){ setSel(null); current=null; renderProcHome(); }
+    else reset();
+    return;
+  }
+  filter=b.dataset.f;
+  document.querySelectorAll('.chip[data-f]').forEach(c=>c.setAttribute('aria-pressed', c===b?'true':'false'));
+  if(q.value.trim()) doSearch();
+  else if(mode==='lesions') render();
+  else if(procGroup) renderProcGroup(procGroup);
+  else renderProcHome();
+});
+
+function doSearch(){
+  const term=q.value.trim().toLowerCase();
+  if(!term){ if(current) render(); else reset(); return; }
+  // abbreviations are matched as whole words so "AS" does not hit every word containing "as"
+  const abHit = x => (x.ab||'').toLowerCase().split(/[^a-z0-9\-\/]+/).includes(term);
+  // short terms (≤3 letters, e.g. "AS", "PS") match whole words only, otherwise substring search
+  const words = s => s.toLowerCase().split(/[^a-z0-9]+/);
+  const startsWord = new RegExp('(^|[^a-z0-9])'+term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  const textHit = x => term.length<=3
+      ? words(x.n).includes(term)
+      : startsWord.test((x.n+' '+x.t+' '+x.tx.map(r=>r[1]).join(' ')+' '+(x.ab||'')).toLowerCase());
+  const found=LESIONS.filter(x=>(filter==='all'||x.c===filter) && (abHit(x)||textHit(x)));
+  // within each tier: abbreviation match, then name match, then text/procedure match
+  const score = x => 2*abHit(x) + startsWord.test(x.n.toLowerCase());
+  found.sort((a,b)=>score(b)-score(a));
+  // procedures match on their own name, abbreviation or description
+  const pFound = PROCS.filter(p => term.length<=3
+      ? words(p.n).includes(term) || abHit(p)
+      : startsWord.test((p.n+' '+p.t+' '+(p.ab||'')).toLowerCase()));
+  railTitle.textContent='Search results';
+  railSub.textContent=`“${q.value.trim()}”`;
+  let html='';
+  if(found.length)  html+=`<h4 class="tier">Lesions <span>${found.length}</span></h4>`+tiered(found,null);
+  if(pFound.length) html+=`<h4 class="tier">Procedures <span>${pFound.length}</span></h4>`+pFound.map(p=>procCard(p)).join('');
+  railBody.innerHTML = html ||
+    `<p class="hint">Nothing matched <b>${q.value.trim()}</b>. Try a shorter term, an abbreviation such as “TOF”, or a procedure such as “Glenn”.</p>`;
+  railBody.scrollTop=0;
+  current=null; setSel(null);
+}
+q.addEventListener('input',doSearch);
+
+function reset(){
+  setMode('lesions'); procGroup=null;
+  railTitle.textContent='Select a structure';
+  railSub.textContent=`16 structures · ${N_LESIONS} structural lesions`;
+  railBody.innerHTML=`<p class="hint">Start by clicking any structure on the diagram — the <b>chambers</b>, the <b>septa</b>, the four <b>valves</b>, or the <b>great vessels</b>.<br><br>
+  Each structure lists every lesion that involves it, <b>common</b> ones first. Open <b>Treatment</b> on any card to see the medical, catheter and surgical options.<br><br>
+  Tap <b>Procedures</b> above to browse the operations and catheter interventions instead, and see every defect each one is used in.<br><br>
+  Search works on names, abbreviations (TOF, HLHS, PAPVR) and procedures (Glenn, Norwood, Ross).</p>`;
+}
+reset();
+
+/* treatment toggle and "Involves" chips inside cards */
+railBody.addEventListener('click',e=>{
+  const cat=e.target.closest('.catBox');
+  if(cat){ renderProcGroup(cat.dataset.g); return; }
+
+  const back=e.target.closest('.back');
+  if(back){
+    q.value='';
+    const to=back.dataset.back;
+    if(to==='home'){ setMode('procs'); renderProcHome(); }
+    else if(to==='group'){ setMode('procs'); renderProcGroup(procGroup); }
+    else reset();
+    return;
+  }
+
+  const b=e.target.closest('.txBtn');
+  if(b){
+    const open=b.getAttribute('aria-expanded')==='true';
+    b.setAttribute('aria-expanded', String(!open));
+    b.nextElementSibling.nextElementSibling.hidden=open;   // the <ol class="tx">
+    b.nextElementSibling.hidden=open;                      // the "Procedures only" filter
+    return;
+  }
+  const f=e.target.closest('.txFilter');
+  if(f){
+    const on=f.getAttribute('aria-pressed')!=='true';
+    f.setAttribute('aria-pressed',String(on));
+    f.closest('.more').querySelectorAll('.tx li.mgmt').forEach(li=>li.classList.toggle('muted',on));
+    return;
+  }
+  // cross-links: procedure chip on a lesion card, defect chip on a procedure card
+  const up=e.target.closest('.use');
+  if(up){
+    if(up.classList.contains('cur')) return;
+    q.value='';
+    if(up.dataset.p!=null) focusProc(PROCS[+up.dataset.p]);
+    else focusLesion(LESIONS[+up.dataset.l]);
+    return;
+  }
+  const c=e.target.closest('.inv');
+  if(c){ if(!c.classList.contains('cur')){ q.value=''; pick(c.dataset.k); } return; }
+  const card=e.target.closest('.item'); if(!card) return;
+  const open=card.getAttribute('aria-expanded')==='true';
+  if(open && !e.target.closest('.head')) return;          // taps inside an open card's details don't close it
+  toggleCard(card, !open);
+});
+railBody.addEventListener('keydown',e=>{
+  if((e.key==='Enter'||e.key===' ') && e.target.classList.contains('head')){
+    e.preventDefault(); const card=e.target.closest('.item');
+    toggleCard(card, card.getAttribute('aria-expanded')!=='true');
+  }
+});
+function toggleCard(card, open){
+  if(open) railBody.querySelectorAll('.item[aria-expanded="true"]').forEach(o=>{ if(o!==card) toggleCard(o,false); });
+  card.setAttribute('aria-expanded', String(open));
+  card.querySelector('.more').hidden=!open;
+  if(!open){                                              // closing also folds its treatment list
+    const b=card.querySelector('.txBtn');
+    if(b){ b.setAttribute('aria-expanded','false'); b.nextElementSibling.hidden=true; b.nextElementSibling.nextElementSibling.hidden=true; }
+  }else{
+    const r=card.getBoundingClientRect(), box=railBody.getBoundingClientRect();
+    if(r.top<box.top) card.scrollIntoView({block:'start',behavior:'smooth'});
+  }
+}
+
+/* ---------- resizable panel ---------- */
+(function(){
+  const wrap=document.querySelector('.wrap'), split=document.getElementById('split');
+  const MIN_RAIL=340, MIN_STAGE=420, KEY='heartExplorer.railW';
+  const clamp=w=>Math.max(MIN_RAIL, Math.min(w, window.innerWidth-MIN_STAGE-12));
+  const set=w=>{ w=clamp(w); wrap.style.setProperty('--railW', w+'px');
+    split.setAttribute('aria-valuenow', Math.round(w)); return w; };
+  const save=w=>{ try{ localStorage.setItem(KEY, String(Math.round(w))); }catch(e){} };
+  try{ const s=parseInt(localStorage.getItem(KEY),10); if(s) set(s); }catch(e){}
+
+  split.addEventListener('pointerdown',e=>{
+    e.preventDefault(); split.setPointerCapture(e.pointerId);
+    split.classList.add('drag'); document.body.classList.add('resizing');
+  });
+  split.addEventListener('pointermove',e=>{
+    if(!split.classList.contains('drag')) return;
+    set(window.innerWidth - e.clientX - 6);
+  });
+  const end=e=>{
+    if(!split.classList.contains('drag')) return;
+    split.classList.remove('drag'); document.body.classList.remove('resizing');
+    save(document.querySelector('.rail').getBoundingClientRect().width);
+  };
+  split.addEventListener('pointerup',end); split.addEventListener('pointercancel',end);
+  split.addEventListener('dblclick',()=>{ wrap.style.removeProperty('--railW'); try{ localStorage.removeItem(KEY); }catch(e){} });
+  split.addEventListener('keydown',e=>{
+    if(e.key!=='ArrowLeft' && e.key!=='ArrowRight') return;
+    e.preventDefault();
+    const cur=document.querySelector('.rail').getBoundingClientRect().width;
+    save(set(cur + (e.key==='ArrowLeft' ? 40 : -40)));
+  });
+  window.addEventListener('resize',()=>{
+    const v=wrap.style.getPropertyValue('--railW'); if(v) set(parseFloat(v));
+  });
+})();
+
+function openModal(){ document.getElementById('modalArt').innerHTML=vesselSVG(true); modal.classList.add('on'); }
+document.getElementById('closeModal').addEventListener('click',()=>modal.classList.remove('on'));
+modal.addEventListener('click',e=>{ if(e.target===modal) modal.classList.remove('on'); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') modal.classList.remove('on'); });
+</script>
+</body>
+</html>
