@@ -22,7 +22,9 @@ body{
 .serif{font-family:var(--serif)}
 
 /* ---------- shell ---------- */
-.wrap{--railW:clamp(420px,42vw,760px);display:grid;grid-template-columns:minmax(0,1fr) 12px var(--railW);height:100vh;overflow:hidden}
+.wrap{--railW:clamp(420px,42vw,760px);display:grid;grid-template-columns:minmax(0,1fr) 12px var(--railW);height:calc(100vh - 56px);overflow:hidden}
+.siteFoot{height:56px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:4px 26px;background:var(--rail);color:#9aa3ad;border-top:1px solid #2a3340;font-size:11.5px;line-height:1.45;text-align:center}
+.siteFoot a{color:#c3ccd6}
 /* draggable divider between the heart and the lesion panel */
 .split{position:relative;cursor:col-resize;background:var(--rail);touch-action:none;outline:none}
 .split::before{content:"";position:absolute;inset:0 5px;background:#2a3340;transition:background .15s}
@@ -264,6 +266,7 @@ svg.heart{width:100%;height:100%;display:block;touch-action:manipulation}
 
 @media (max-width:1000px){
   .wrap{grid-template-columns:1fr;height:auto;overflow:visible}
+  .siteFoot{height:auto;padding:14px 16px 18px;font-size:12px}
   .split{display:none}
   .stage{padding:18px 16px 12px}
   .canvasCard{min-height:50vh;flex:none}
@@ -319,6 +322,11 @@ svg.heart{width:100%;height:100%;display:block;touch-action:manipulation}
     </div>
   </aside>
 </div>
+
+<footer class="siteFoot">
+  <span>Created by Parth Shirode, pediatric resident, with the help of Claude (Anthropic). &copy; 2026 Parth Shirode. All rights reserved. For education only. Made for residents as a learning tool. This is not an official resource of Akron Children&rsquo;s Hospital.</span>
+  <span>Anonymous visit counts via <a href="https://www.goatcounter.com" target="_blank" rel="noopener">GoatCounter</a>; no personal data collected.</span>
+</footer>
 
 <div class="modal" id="modal">
   <div class="modalIn">
@@ -824,5 +832,7 @@ document.getElementById('closeModal').addEventListener('click',()=>modal.classLi
 modal.addEventListener('click',e=>{ if(e.target===modal) modal.classList.remove('on'); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') modal.classList.remove('on'); });
 </script>
+<!-- GoatCounter analytics (site code: spchd) -->
+<script data-goatcounter="https://spchd.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
