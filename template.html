@@ -36,7 +36,8 @@ body.resizing svg.heart{pointer-events:none}
 .stage{padding:22px 26px 14px;display:flex;flex-direction:column;min-width:0;min-height:0}
 .rail{background:var(--rail);color:var(--railink);display:flex;flex-direction:column;min-width:0;min-height:0}
 
-header h1{font-size:25px;margin:0 0 3px;letter-spacing:-.2px}
+header h1{font-size:25px;margin:0 0 3px;letter-spacing:-.2px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+header h1:focus-visible{outline:2px solid #a9761b;outline-offset:3px;border-radius:3px}
 header p{margin:0 0 16px;color:var(--muted);font-size:13.5px;max-width:62ch}
 
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
@@ -280,7 +281,7 @@ svg.heart{width:100%;height:100%;display:block;touch-action:manipulation}
 
   <main class="stage">
     <header>
-      <h1 class="serif">Congenital Heart Explorer</h1>
+      <h1 class="serif" id="homeLink" role="link" tabindex="0" title="Back to the opening page">Congenital Heart Explorer</h1>
       <p id="lede">Click a chamber, valve, septum or great vessel to see the structural lesions that arise there. Hover to name a structure.</p>
     </header>
 
@@ -324,7 +325,7 @@ svg.heart{width:100%;height:100%;display:block;touch-action:manipulation}
 </div>
 
 <footer class="siteFoot">
-  <span>Created by Parth Shirode, MD, Pediatric Resident, with the help of Claude (Anthropic). &copy; 2026 Parth Shirode. All rights reserved. For education only. Made for residents as a learning tool. This is not an official resource of Akron Children&rsquo;s Hospital.</span>
+  <span>Created by Parth Shirode, pediatric resident, with the help of Claude (Anthropic). &copy; 2026 Parth Shirode. All rights reserved. For education only. Made for residents as a learning tool. This is not an official resource of Akron Children&rsquo;s Hospital.</span>
   <span>Anonymous visit counts via <a href="https://www.goatcounter.com" target="_blank" rel="noopener">GoatCounter</a>; no personal data collected.</span>
 </footer>
 
@@ -725,6 +726,19 @@ function reset(){
   Search works on names, abbreviations (TOF, HLHS, PAPVR) and procedures (Glenn, Norwood, Ross).</p>`;
 }
 reset();
+
+/* title click = back to the opening page */
+function goHome(){
+  q.value=''; filter='all';
+  document.querySelectorAll('.chip[data-f]').forEach(c=>c.setAttribute('aria-pressed', c.dataset.f==='all'?'true':'false'));
+  modal.classList.remove('on');
+  current=null; setSel(null); setHover(null);
+  reset();
+  railBody.scrollTop=0; window.scrollTo(0,0);
+}
+const homeLink=document.getElementById('homeLink');
+homeLink.addEventListener('click',goHome);
+homeLink.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); goHome(); } });
 
 /* treatment toggle and "Involves" chips inside cards */
 railBody.addEventListener('click',e=>{
